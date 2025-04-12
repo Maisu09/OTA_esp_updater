@@ -4,10 +4,12 @@
 #include <Update.h>
 #include "Resources/connectivity.h"
 #include "Resources/certificate.h"
+#include <fstream>
+#include <ArduinoJson.h>
 
 // sudo chmod a+rw /dev/ttyUSB0
-
-const char* url = "https://ota-esp32-updater.s3.eu-north-1.amazonaws.com/file.ino.bin?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIASBGQLUEXARTOI4CI%2F20250412%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20250412T102818Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEFoaCmV1LW5vcnRoLTEiSDBGAiEAsuajg1NoDC3mu3hFOKGVrc0doR3HyW2Z8lV%2BsbBuyvECIQCKVtpuzNS4m6n8qHd06VRZo4PvMtP%2FO%2FqCH0ynOMgpyyr6AgjU%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F8BEAAaDDE0MDAyMzQwNjg5NCIM5Scsxz7SO%2FqvUKp4Ks4CxOdngTqTbbOln26rkLdwJTUAJLgiN1MlStnBIWE5P27Noe%2F90SXdBTA9NHahf7Jw9yqRYusIm7RRNEbDBZ5Km5ZfYSswcF6DXOapbYJ%2Fn2BClkQrOtVgCJqAA8cmn6bpQjw2LZ4hrWe5B9YYRQ7atSj9OByFZF6EVhpXkKCEISMSTD%2B7L0vnbVfD3B5eSvNLGYULAHpcx0LptV1QltxtXhPRRZZLxa%2B5GQW6JXDm0u34e9yGLbGQby5oAhbLfkd90PltDpgPTR%2FYE1miTVYMdLFrk0LfP9qU2ZRoKau1IfgL4ENW7jlgnEMogbbe0QnuyIIqi8%2FdB8g2Sn2njAvyJEulKIWVpHlID0ADYNqeMg4HYRPkDTGrxssHrZgrM9NTgA88s5Slj2Lj5qADOY31ClXSgoYcc0jv7qsXjd9Ft2EF%2F7rMx%2FbYlx1T1DtYXjDmk%2Bi%2FBjqyAlUTYkKB7JjkcvR1TdYTNcRupm5uKRmOl2wHQd7au0blkRIc2eR7MktD3rB1Uw4NtDBTgBTQxVx%2FNgV5aWOUrPGK2RCeszEmphIA8ITBLRSdGu6Evk4DxPWHRmpf%2BugtR13uKuUrsIrTHBcQY5QDBJqZfdPdv6iso110OmnLfCd8T0iG6aBqrdU5BGU6B0hOnl1Y6a0jcKnRD1JGEjMu8CrQ0H64SVxyPCb0GSKbM5YRK1w1HC%2BViF%2F7HeI2icGB3BH4B%2BuRUI%2BF7fZNJyLAcpswq9zovCrS7335xqDNcMTpF7z74U6mTszn5XTSPrGgpl%2FW0Hq68uk%2BsG6QNcSTv%2B%2FV0cPzA2DsAX0KOB0unrXdcIIfTG0hMDei9EGFSJxqFzmONz9P1NuGgSlBxTK8yKtn%2BQ%3D%3D&X-Amz-Signature=aacfe9015c90f5a67ace539a4be07172bae0360591aafb8b679ed15d35ac908d";  // The newly generated URL (temporary ) aws s3 presign s3://bucket/file_in_bucket --expires-in time
+// https://ota-esp32-updater.s3.eu-north-1.amazonaws.com/file.ino.bin?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIASBGQLUEXIXCSCD4T%2F20250412%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20250412T181602Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEGIaCmV1LW5vcnRoLTEiRjBEAiBHMYaXD7a1i3JwGc%2BWA2Z0dNMPRVK4JfProEbkKtcg3wIgTgzsRg4hTqnJHc52A8y9CbsexZz1QUUmdqyjYKHX7F8q%2BwII2%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgwxNDAwMjM0MDY4OTQiDCkcOyUYqsgvLb7T0yrPAiX76G85I2940KBYa3yF%2BDAaei45lv%2BO1vh7yATD6YndQBgNjQ%2FG94%2FiImYUwW1aov4b3RDU5t3Ht%2F8%2BqRrYK54Q0w1Of%2FQ5DKtl160yk56zIs7C6sMfzPQ0w0HAByIB3mYF1qNg38aK9ZOI55bh2Qjg1KpjQuLP3dn%2FzRIl3tbSgFuhJOhSX%2FpkXdNsJEkgq2xkH%2Bs3uaF3ElN%2Bu4sGJ%2BdGAqgr%2FAWiWnbLF17oWyTtpQVU4V4DqqvZV3pAA%2BgG1WE6YPWCUxm3lRW0KXfINQtAI17I4%2F9VXi2H29EADK%2FKPigTpCYn5GnzRPZsdfYjSzsIrmjnBUOw1wzCSi%2BdmhzpMZk1pR%2BN1OXBAJF6K3314WQdYij9W5eEZ4pmI9YYfRouhjvhp1TbQsYnjLB0YZGQzO2nB6XMEnQmTceokco2RwllmV%2BPT53b4ezFkFCxMOaT6L8GOrQCT2AIxzp7vPxmqjePY3DmP9imXfthMkOjU4D5b8UPuRUgacp5nrWNSAuMh3zLSi4QMdAM5xtICvm6krpnh9G%2FM8f7Gg1sp%2BsKIVe2vzSw4z1lX51jJdURNMsh2GIwCwkOztEntPwlQF1X%2FY5EUjCqOzUaPbSpqRFeIYVo%2FhAiPKCe5A1CPYFh0mXmpw0w%2F8dLn0tBdLWTxi2iPijWEtn%2FCCSddo2uslWKbf1wy%2B6VyNorA8LZt4jp32H4bsU%2B5XarltxUmIRNca9dfFugwQP2%2B319OznPlWp77aTnqw6b6JueH3q40xNegfKfgyWF1R97v%2F2FxCZs%2F1tQoEUJjvsvwCET%2BO4Ukd7nRXU8sOp9YK9dIfBK5N8QORx8FexuvFzlAyswZgr6A5UWjnKedmuowK2GjC4%3D&X-Amz-Signature=b833055392b444197ec39cc931cc94db8d52542ae1d383d24f8a9cd6b974cafa
+const char* url = "https://ota-esp32-updater.s3.eu-north-1.amazonaws.com/file.ino.bin?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIASBGQLUEXIXCSCD4T%2F20250412%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20250412T181602Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEGIaCmV1LW5vcnRoLTEiRjBEAiBHMYaXD7a1i3JwGc%2BWA2Z0dNMPRVK4JfProEbkKtcg3wIgTgzsRg4hTqnJHc52A8y9CbsexZz1QUUmdqyjYKHX7F8q%2BwII2%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgwxNDAwMjM0MDY4OTQiDCkcOyUYqsgvLb7T0yrPAiX76G85I2940KBYa3yF%2BDAaei45lv%2BO1vh7yATD6YndQBgNjQ%2FG94%2FiImYUwW1aov4b3RDU5t3Ht%2F8%2BqRrYK54Q0w1Of%2FQ5DKtl160yk56zIs7C6sMfzPQ0w0HAByIB3mYF1qNg38aK9ZOI55bh2Qjg1KpjQuLP3dn%2FzRIl3tbSgFuhJOhSX%2FpkXdNsJEkgq2xkH%2Bs3uaF3ElN%2Bu4sGJ%2BdGAqgr%2FAWiWnbLF17oWyTtpQVU4V4DqqvZV3pAA%2BgG1WE6YPWCUxm3lRW0KXfINQtAI17I4%2F9VXi2H29EADK%2FKPigTpCYn5GnzRPZsdfYjSzsIrmjnBUOw1wzCSi%2BdmhzpMZk1pR%2BN1OXBAJF6K3314WQdYij9W5eEZ4pmI9YYfRouhjvhp1TbQsYnjLB0YZGQzO2nB6XMEnQmTceokco2RwllmV%2BPT53b4ezFkFCxMOaT6L8GOrQCT2AIxzp7vPxmqjePY3DmP9imXfthMkOjU4D5b8UPuRUgacp5nrWNSAuMh3zLSi4QMdAM5xtICvm6krpnh9G%2FM8f7Gg1sp%2BsKIVe2vzSw4z1lX51jJdURNMsh2GIwCwkOztEntPwlQF1X%2FY5EUjCqOzUaPbSpqRFeIYVo%2FhAiPKCe5A1CPYFh0mXmpw0w%2F8dLn0tBdLWTxi2iPijWEtn%2FCCSddo2uslWKbf1wy%2B6VyNorA8LZt4jp32H4bsU%2B5XarltxUmIRNca9dfFugwQP2%2B319OznPlWp77aTnqw6b6JueH3q40xNegfKfgyWF1R97v%2F2FxCZs%2F1tQoEUJjvsvwCET%2BO4Ukd7nRXU8sOp9YK9dIfBK5N8QORx8FexuvFzlAyswZgr6A5UWjnKedmuowK2GjC4%3D&X-Amz-Signature=b833055392b444197ec39cc931cc94db8d52542ae1d383d24f8a9cd6b974cafa";  // The newly generated URL (temporary ) aws s3 presign s3://bucket/file_in_bucket --expires-in time
 // const char* root_ca = \
 // "-----BEGIN CERTIFICATE-----\n" \
 // "MIID0zCCArugAwIBAgIQC1RBc3sZbxLNPqT79rLJfzANBgkqhkiG9w0BAQsFADBh\n" \
@@ -40,8 +42,6 @@ const char* root_ca = CERTIFICATE;
 const char *ssid = SSID;
 const char *pass = PASS;
 
-#include <WiFi.h>
-
 
 void initWiFi() {
   WiFi.mode(WIFI_STA);
@@ -54,9 +54,36 @@ void initWiFi() {
   Serial.println(WiFi.localIP());
 }
 
-String read_json() {
-  // reads the json from S3 and returns the link to the code.bin.
-  ;
+char read_json() {
+  FILE *file;
+  file = fopen("src/Resources/firmware.json", "r");
+  char buffer[255];
+  while (fgets(buffer, sizeof(buffer), file)){
+    Serial.println(buffer);
+    delay(1000);
+  }
+  fclose(file);
+  char linie ='c';
+  return linie;
+
+  // // Parse JSON
+  // StaticJsonDocument<1024> doc;
+  // DeserializationError error = deserializeJson(doc, json_file);
+
+  // if (error) {
+  //   Serial.print("JSON deserialization failed: ");
+  //   Serial.println(error.c_str());
+  //   return "";
+  // }
+
+  // // Extract version and link
+  // String version = doc["version"].as<String>();
+  // String link = doc["link"].as<String>();
+
+  // Serial.println("Version: " + version);
+  // Serial.println("Link: " + link);
+
+  // return version + "\n" + link;
 }
 
 void updater(char url){
@@ -64,10 +91,18 @@ void updater(char url){
   ;
 }
 
+String VERSION;
 
 void setup() {
   Serial.begin(115200);
   initWiFi();
+  
+  // Serial.println("FROM FILE");
+  // Serial.print(lines);
+  // Serial.println("FROM FILE");
+
+  /// READ JSON FILE ///
+  // char lines = read_json();
 
   Serial.print("RRSI: ");
   Serial.println(WiFi.RSSI());

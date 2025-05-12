@@ -1,0 +1,21 @@
+
+
+1. Change usb write and read access:
+    sudo chmod a+rw /dev/ttyUSB0
+
+2. Amazon CLI command for generating a presign URL for the bucket:
+    aws s3 presign s3://ota-esp32-updater/firmware_v1.0.ino.bin --expires-in 7200
+
+3. Key Generation using openssl.
+ - Private key: 
+    openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
+
+ - Public key:
+    openssl rsa -pubout -in private.pem -out public.pem
+
+ - Convert public.pem to a header file:
+    xxd -i public.pem > public_key.h
+
+4. Creation of a REST API with API Gateway from AWS
+   Creation of a API KEY
+   

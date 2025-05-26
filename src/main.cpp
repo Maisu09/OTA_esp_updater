@@ -1,94 +1,268 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <Update.h>
-#include "Resources/connectivity.h"
-#include "Resources/public_key.h"
-#include <fstream>
+#include <ArduinoJson.h>
+#include "mbedtls/base64.h"
+#include "mbedtls/rsa.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/aes.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/entropy.h"
+#include "Resources/connectivity.h"  // SSID & PASS
 
-
-// const char* url = ;
-const char* url = "https://ota-esp32-updater.s3.eu-north-1.amazonaws.com/firmware_v1.0.ino.bin?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIASBGQLUEXHI3M3TFR%2F20250512%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20250512T151909Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEC8aCmV1LW5vcnRoLTEiRjBEAiAfMg3QERFkEtNyRaRzCWs2FXeIfFjBNbthz8Lrw%2BxTKgIgZ1od05lfw7aStAgh1wBwiiR%2Fm2b1nrjVd4BfSeL%2BHxIq7AII2P%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgwxNDAwMjM0MDY4OTQiDJwxPM6gI%2F%2BGct72CyrAAt7eu6hs63Xdh0DW1YGTHh%2FsnHVLKNvaOp7VCYjjK%2FDd9s6U%2BNLHE%2BlKjPIeVYvqSq31O5nLA5cXOznMLFGvsthqj2W3j5juDKFdzPDX9imGd7%2BPjDPwgLCFmXSyuILJhIRFUECMZedwFi1IUsisLxqWL9nCOou7mM5Zb5VFkjJjwTb0m6T8PvpF%2FWrUVoUPTH7EO1ykIBHMtmAcBQ%2BvWkgYZDgCmvEv6tYEyOYDvu%2F6KED8cypXDaQxfYOj2orGZ7u5C4I7Y0BF6coG1uk%2BmX38s8XL9k%2BWcnBt%2FVRc7zmp4f2S%2FpwJ3BsZ1%2FzaPkauM6IzjEKuTjhXhsHIQCt7srI1hpMqX5HNIFvFEbH1LBeUPpgMoQmQsq4Ok%2BRUFbz90z%2FTtu6%2BFBcPDl7HloqrAlbrnYidJnIXedSuk94Roe9PMJqaiMEGOq4CNAeRXBXtVrtmCUtYQiaKYlQoQV%2BgHZ87LfUrWpf%2BuRpl%2F4OGa96pDGRm8mG01Tth0onGNR%2BPl%2FZBQI7Gmwyk6izDVzlKB6f%2B8BscL1WhmEi%2FdqVlqfkpNOhwKzOzFRLRi8pvFX14%2FW7Fn94WQ09J2UNO3KB0UZ34e2S8%2Fz83WAahCm%2BiIdbq3iYIvQPMHPhORLR1lNBcav0PB064jbiEpsW74Vv3a5VbAUs%2FHBatq5nM1U%2Fa1kbgK8vni22937qkVTPSXrcc5iLMMLHqrLzUxRXh9OenpBDpJb8Qw%2BulJHyAWLV2SS0wTnXinfDWiG18iQCAtKES%2BqLK2RXIX0JHyLHhGlN2qZNNwcpffsrkSHQUQupOrHZnsELfBtgsfmVmMMYTpRVzroHpBEz%2BHyg%3D&X-Amz-Signature=a9d0aea906bbdba3f7e444b060894f4aa65d94ce0c1d33ec7c607d14aef4c0c0";
-// const char* root_ca = CERTIFICATE;
 const char *ssid = SSID;
 const char *pass = PASS;
+const char *gateway = "https://ur94px0mnc.execute-api.eu-north-1.amazonaws.com/prod/otaLambda";  // Your API Gateway
+const char *api_key = "XVjxy0NgPJ2Vw0TuTP7Ik5rkjn70gTQz1Sty9cXQ";  // Your API Key
+
+// Your RSA private key
+const char private_key_pem[] = R"KEY(
+-----BEGIN PRIVATE KEY-----
+
+-----END PRIVATE KEY-----
+)KEY";
 
 
+// Connect to WiFi
 void initWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
-  Serial.print("Connecting to WiFi ..");
+  Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    Serial.print('.');
+    Serial.print(".");
     delay(1000);
   }
-  Serial.println(WiFi.localIP());
+  Serial.println("\nConnected. IP: " + WiFi.localIP().toString());
 }
 
-void updater(char url){
-  // updates the esp with the specific bin file.
-  ;
+bool base64Decode(const String &input, std::vector<uint8_t> &output) {
+    size_t olen = 0;
+    size_t inputLen = input.length();
+    output.resize((inputLen * 3) / 4 + 1);
+
+    int res = mbedtls_base64_decode(
+        output.data(), output.size(), &olen,
+        reinterpret_cast<const uint8_t *>(input.c_str()), inputLen
+    );
+    if (res != 0) {
+        Serial.println("Base64 decode failed");
+        return false;
+    }
+    output.resize(olen);
+    return true;
 }
 
+// Decrypt Base64 RSA-encrypted AES key
+std::vector<uint8_t> decryptBase64RSA(const String &encryptedB64) {
+  mbedtls_pk_context pk;
+  mbedtls_entropy_context entropy;
+  mbedtls_ctr_drbg_context ctr_drbg;
+
+  mbedtls_pk_init(&pk);
+  mbedtls_entropy_init(&entropy);
+  mbedtls_ctr_drbg_init(&ctr_drbg);
+
+  const char *pers = "rsa_decrypt";
+  mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                        (const unsigned char *)pers, strlen(pers));
+
+  if (mbedtls_pk_parse_key(&pk, (const unsigned char *)private_key_pem,
+                           strlen(private_key_pem) + 1, NULL, 0) != 0) {
+    Serial.println("Failed to parse private key");
+    return {};
+  }
+
+  size_t olen;
+  uint8_t encrypted_bin[512];
+  if (mbedtls_base64_decode(encrypted_bin, sizeof(encrypted_bin), &olen,
+                            (const unsigned char *)encryptedB64.c_str(),
+                            encryptedB64.length()) != 0) {
+    Serial.println("Base64 decode failed");
+    return {};
+  }
+
+  uint8_t decrypted[256];
+  size_t decrypted_len;
+  if (mbedtls_pk_decrypt(&pk, encrypted_bin, olen, decrypted, &decrypted_len,
+                         sizeof(decrypted), mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
+    Serial.println("RSA decryption failed");
+    return {};
+  }
+
+  mbedtls_pk_free(&pk);
+  mbedtls_ctr_drbg_free(&ctr_drbg);
+  mbedtls_entropy_free(&entropy);
+
+  return std::vector<uint8_t>(decrypted, decrypted + decrypted_len);
+}
+
+// AES-CBC Decrypt (data includes IV as first 16 bytes)
+String aesDecrypt(const String &base64Ciphertext, const std::vector<uint8_t> &aesKey) {
+  Serial.println("Base64 ciphertext: " + base64Ciphertext);
+  Serial.printf("AES key size: %d\n", aesKey.size());
+  std::vector<uint8_t> encrypted(512);
+  size_t olen;
+  int res = mbedtls_base64_decode(encrypted.data(), encrypted.size(), &olen,
+                                  (const unsigned char *)base64Ciphertext.c_str(),
+                                  base64Ciphertext.length());
+  if (res != 0) {
+    Serial.printf("Base64 decode failed (AES), mbedtls error: %d\n", res);
+    return "";
+  }
+  encrypted.resize(olen);
+
+  std::vector<uint8_t> iv(encrypted.begin(), encrypted.begin() + 16);
+  std::vector<uint8_t> ciphertext(encrypted.begin() + 16, encrypted.end());
+
+  std::vector<uint8_t> decrypted(ciphertext.size());
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+  mbedtls_aes_setkey_dec(&aes, aesKey.data(), 128);
+  mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, ciphertext.size(),
+                        iv.data(), ciphertext.data(), decrypted.data());
+  mbedtls_aes_free(&aes);
+
+  // Remove PKCS7 padding
+  uint8_t padLen = decrypted.back();
+  if (padLen > 16) {
+    Serial.println("Invalid padding");
+    return "";
+  }
+  decrypted.resize(decrypted.size() - padLen);
+
+  return String((char *)decrypted.data());
+}
+
+// Fetch Encrypted Data (JSON contains AES key + encrypted URL)
+bool fetchEncryptedFields(String &out_enc_key, String &out_enc_data) {
+  HTTPClient https;
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  https.begin(client, gateway);  // Your API Gateway
+  https.addHeader("x-api-key", api_key);  // Your API Key
+
+  int code = https.GET();
+  if (code != 200) {
+    Serial.printf("API call failed: %d\n", code);
+    https.end();
+    return false;
+  }
+
+  String body = https.getString();
+  https.end();
+
+  Serial.println("API JSON: " + body);
+
+  ArduinoJson::JsonDocument doc1;
+  DeserializationError error1 = deserializeJson(doc1, body);
+  if (error1) {
+    Serial.println("Failed to parse outer JSON");
+    return false;
+  }
+
+  String innerJson = doc1["body"].as<String>();
+
+  ArduinoJson::JsonDocument doc2;
+  DeserializationError error2 = deserializeJson(doc2, innerJson);
+  if (error2) {
+    Serial.println("Failed to parse inner JSON");
+    return false;
+  }
+
+  out_enc_key = doc2["key"].as<String>();
+  out_enc_data = doc2["data"].as<String>();
+  Serial.println("Encrypted Key:");
+  Serial.println(out_enc_key);
+
+  Serial.println("Encrypted Data:");
+  Serial.println(out_enc_data);
+
+  return true;
+}
+
+// Perform OTA update using decrypted presigned URL
+void performOTA(const String &url) {
+  HTTPClient https;
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  https.begin(client, url);
+  int code = https.GET();
+  if (code != 200) {
+    Serial.printf("Firmware download failed: %d\n", code);
+    https.end();
+    return;
+  }
+
+  int len = https.getSize();
+  bool canBegin = Update.begin(len);
+  if (!canBegin) {
+    Serial.println("Update.begin failed");
+    https.end();
+    return;
+  }
+
+  WiFiClient *stream = https.getStreamPtr();
+  size_t written = Update.writeStream(*stream);
+
+  if (written == len) Serial.println("Written all firmware bytes");
+  else Serial.printf("Partial write: %d/%d\n", written, len);
+
+  if (Update.end() && Update.isFinished()) {
+    Serial.println("OTA update complete. Rebooting...");
+    ESP.restart();
+  } else {
+    Serial.println("OTA update failed");
+  }
+
+  https.end();
+}
 
 void setup() {
   Serial.begin(115200);
   initWiFi();
-  
-  Serial.print("RRSI: ");
-  Serial.println(WiFi.RSSI());
-  Serial.println("Connected");
-  Serial.print("URL: ");
-  Serial.println(url);
 
-  // Begin OTA
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient https;
-    WiFiClientSecure client;
+  String enc_key_b64, enc_data_b64;
+  if (!fetchEncryptedFields(enc_key_b64, enc_data_b64)) return;
 
-    // client.setCACert(root_ca);
-    client.setInsecure();
+  Serial.print("enc_data_b64: [");
+  Serial.print(enc_data_b64);
+  Serial.println("]");
+  Serial.printf("Length: %d\n", enc_data_b64.length());
 
-    https.begin(client, url); // HTTPS!
-    int httpCode = https.GET();
-
-    if (httpCode == 200) {
-      int contentLength = https.getSize();
-      bool canBegin = Update.begin(contentLength);
-      if (canBegin) {
-        // start_update(&https, contentLength);
-        WiFiClient *client = https.getStreamPtr();
-        size_t written = Update.writeStream(*client);
-        if (written == contentLength) {
-          Serial.println("Written : " + String(written) + " bytes successfully");
-        } else {
-          Serial.println("Written only : " + String(written) + "/" + String(contentLength) + ". Retry?");
-        }
-
-        if (Update.end()) {
-          Serial.println("OTA done!");
-          if (Update.isFinished()) {
-            Serial.println("Restarting ESP");
-            ESP.restart();
-          } else {
-            Serial.println("OTA not finished. Something went wrong.");
-          }
-        } else {
-          Serial.println("Error Occurred. Error #: " + String(Update.getError()));
-        }
-
-      } else {
-        Serial.println("Not enough space to begin OTA");
-      }
-    } else {
-      Serial.println("Failed to fetch firmware. HTTP code: " + String(httpCode) + url);
-    }
-
-    https.end();
+  // Sanitize and pad base64 string
+  enc_data_b64.replace("\n", "");
+  enc_data_b64.replace("\\n", "");
+  enc_data_b64.replace("\\", "");
+  enc_data_b64.trim();
+  while (enc_data_b64.length() % 4 != 0) {
+    enc_data_b64 += "=";
   }
+  Serial.print("Sanitized enc_data_b64: [");
+  Serial.print(enc_data_b64);
+  Serial.println("]");
+  Serial.printf("Sanitized Length: %d\n", enc_data_b64.length());
+
+  std::vector<uint8_t> aes_key = decryptBase64RSA(enc_key_b64);
+  if (aes_key.empty()) {
+    Serial.println("RSA decryption failed");
+    return;
+  }
+
+  String decrypted_url = aesDecrypt(enc_data_b64, aes_key);
+  if (decrypted_url == "") {
+    Serial.println("AES decryption failed");
+    return;
+  }
+
+  Serial.println("Decrypted URL: " + decrypted_url);
+  performOTA(decrypted_url);
 }
 
-void loop()
-{
-  // put your main code here, to run repeatedly:
+void loop() {
+  // Optional: Periodic OTA check
+  delay(60000);  // Every 60s
 }

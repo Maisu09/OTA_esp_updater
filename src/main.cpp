@@ -14,8 +14,8 @@
 
 const char *ssid = SSID;
 const char *pass = PASS;
-const char *gateway = "https://ur94px0mnc.execute-api.eu-north-1.amazonaws.com/prod/otaLambda";  // Your API Gateway
-const char *api_key = "XVjxy0NgPJ2Vw0TuTP7Ik5rkjn70gTQz1Sty9cXQ";  // Your API Key
+const char *gateway = "https://ur94px0mnc.execute-api.eu";  // Your API Gateway
+const char *api_key = "";  // Your API Key
 
 // Your RSA private key
 const char private_key_pem[] = R"KEY(
